@@ -4,7 +4,7 @@ Dette repoet inneholder VGs løpende beregning av statens merinntekter fra vannk
 
 Vi bruker løpende data om kraftproduksjon og spotpriser fra Nord Pool. Disse er ikke vedlagt, men eksempler på struktur ligger i `./examples`.
 
-Ta gjerne kontakt med jari@vg.no hvis du har spørsmål.
+Spørsmål? Ta kontakt med jari@vg.no.
 
 ## Kjør med Docker
 
@@ -17,8 +17,8 @@ Sett miljøvariabler
 
 og så:
 
-  make docker-run
+    make docker-run
 
 ## Deploy
 
-  DOCKER_REGISTRY="..." make deploy
+    DOCKER_REGISTRY="..." make deploy
