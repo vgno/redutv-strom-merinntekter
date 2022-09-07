@@ -1,11 +1,10 @@
-library(tidyr)
+library(tidyverse)
 library(PxWebApiData)
 library(lubridate)
 library(glue)
 library(here)
 library(dotenv)
 library(memoise)
-library(stringr)
 
 if (file.exists(here::here(".env"))) {
   load_dot_env()
@@ -77,6 +76,27 @@ nordpool.production.hourly <- memoise(function() {
 
   prod <- jsonlite::fromJSON(api_url('API_PROD_HOURLY'), flatten = T)$items
   prod %>%
+    as_tibble() %>%
+    separate(hours, into = c("hour.start", "hour.end")) %>%
+    mutate(
+      date = lubridate::ymd_h(str_c(date, hour.start, sep = " "))
+    )
+})
+
+nordpool.consumption.daily <- memoise(function() {
+  print("fetching nordpool.consumption.daily")
+  cnp <- jsonlite::fromJSON(api_url('API_CNP_DAILY'), flatten = T)$items
+  cnp %>%
+    as_tibble() %>%
+    mutate(date = as.Date(date))
+})
+
+nordpool.consumption.hourly <- memoise(function() {
+  print("fetching nordpool.consumption.hourly")
+
+  cnp <- jsonlite::fromJSON(api_url('API_CNP_HOURLY'), flatten = T)$items
+
+  cnp %>%
     as_tibble() %>%
     separate(hours, into = c("hour.start", "hour.end")) %>%
     mutate(

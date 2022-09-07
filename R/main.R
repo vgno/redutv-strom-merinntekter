@@ -14,13 +14,16 @@ rsm.calculate <- function(
     param_prop_statkraft = .42,
     param_prop_kommfylk = .54,
     param_prop_private = .04,
+    param_skatteposisjon_kr = 0.1,
     na.rm = F
 ) {
   if (freq == 'daily') {
     power.prod <- nordpool.production.daily() %>% filter(zone != 'NO')
+    power.cnp <- nordpool.consumption.daily() %>% filter(zone != 'NO')
     power.prices <- nordpool.prices.daily()
   } else if (freq == 'hourly') {
     power.prod <- nordpool.production.hourly() %>% filter(zone != 'NO')
+    power.cnp <- nordpool.consumption.hourly() %>% filter(zone != 'NO')
     power.prices <- nordpool.prices.hourly()
   } else {
     stop(glue("freq = {freq} is not supported"))
@@ -28,7 +31,7 @@ rsm.calculate <- function(
 
   regions <- power.prices %>% distinct(region, displayName) %>% rename(region.name = displayName)
 
-  ssb_prop_vannkraft <- ssb.table("12824", ContentsCode = 'Kraft', Tid = T, Produk2 = c("01", "01.01")) %>%
+  ssb <- ssb.table("12824", ContentsCode = 'Kraft', Tid = T, Produk2 = c("01", "01.01")) %>%
     rename_with(tolower) %>%
     mutate(date = lubridate::ym(tid)) %>%
     pivot_wider(c(date, tid), names_from=produk2.label, values_from=value) %>%
@@ -49,6 +52,12 @@ rsm.calculate <- function(
           value = MWh * 1000,
           variable = "pro"
         ),
+      power.cnp %>% transmute(
+        date,
+        region = tolower(zone),
+        value = MWh * 1000,
+        variable = "cnp"
+      ),
       power.prices %>%
         transmute(date, region = tolower(region), value = value / 100, variable = "price")
     )
@@ -56,12 +65,20 @@ rsm.calculate <- function(
   dat.wide <- dat.long %>%
     pivot_wider(c(date, region), names_from = variable, values_from = value) %>%
     arrange(date) %>%
-    left_join(ssb_prop_vannkraft, by = 'date') %>%
-    fill(c(ssb.prop.vannkraft, ssb.prop.vannkraft.ma4), .direction = 'down')
+    mutate(datedate = as.Date(date)) %>%
+    left_join(ssb, by = c("datedate" = "date")) %>%
+    fill(c(ssb.prop.vannkraft.ma4), .direction = "down") %>%
+    mutate(
+      ssb_prop_vannkraft = case_when(
+        is.na(ssb.prop.vannkraft) ~ ssb.prop.vannkraft.ma4,
+        T ~ ssb.prop.vannkraft
+      ),
+    ) %>%
+    select(-c(datedate, starts_with("ssb.")))
 
   if (na.rm) {
     dat.wide <- dat.wide %>%
-      filter(!(is.na(pro) | is.na(price)))
+      filter(!(is.na(pro) | is.na(price) | is.na(cnp)))
   }
 
   result_regional <- dat.wide %>%
@@ -90,22 +107,27 @@ rsm.calculate <- function(
         date >= "2022-09-01"                       ~ .9
       ),
 
-      # ikke i bruk
-      param_elavgift_per_kwh = case_when(
+      param_elavgift_prop_alminnelig = .55,
+      param_elavgift_prop_redusert = .16,
+      param_elavgift_prop_fritatt  = .28,
+
+      param_elavgift_sats_redusert_normal = .00546,
+      param_elavgift_sats_alminnelig_normal = .1669,
+
+      param_elavgift_sats_redusert = .00546,
+      param_elavgift_sats_alminnelig = case_when(
         date >= "2021-01-01" & date < "2022-01-01" ~ .1669,
         date >= "2022-01-01" & date < "2022-04-01" ~ .0891,
         date >= "2022-04-01" ~ .1541,
       ),
-
-      param_prop_hydropower = ssb.prop.vannkraft.ma4
     ) %>%
     mutate(
       alt_til_spotpris           = pro * price,
       stromstotte_per_kwh        = pmax(price_monthly_mean - param_stromstotte_floor, 0) * param_stromstotte_prop,
-      en.vkraft                  = pro * param_prop_hydropower * param_prop_spot_eksponert,
+      en.vkraft                  = pro * ssb_prop_vannkraft * param_prop_spot_eksponert,
 
-      en.inntekt.normert.spot    = en.vkraft * price,
-      en.inntekt.normert.normal  = en.vkraft * param_price_baseline,
+      en.inntekt.normert.spot    = en.vkraft * (price - param_skatteposisjon_kr),
+      en.inntekt.normert.normal  = en.vkraft * (param_price_baseline - param_skatteposisjon_kr),
       en.inntekt.normert.ekstra  = en.inntekt.normert.spot - en.inntekt.normert.normal,
 
       en.inntekt.faktisk.spot   = en.inntekt.normert.spot * param_prop_inntekt_faktisk,
@@ -149,14 +171,27 @@ rsm.calculate <- function(
       en.hushold.kost.normal      = en.hushold.vkraft * param_price_baseline,
       en.hushold.kost.ekstra      = en.hushold.kost.spot - en.hushold.kost.normal,
 
-      en.hushold.mva.spot   = en.hushold.kost.spot * param_mva,
+      en.hushold.mva.spot   = en.hushold.kost.spot   * param_mva,
       en.hushold.mva.normal = en.hushold.kost.normal * param_mva,
       en.hushold.mva.ekstra = en.hushold.kost.ekstra * param_mva,
 
-      en.staten.spot   = en.skatt.spot + en.resultat_til_eiere.spot.statkraft + en.hushold.mva.spot,
-      en.staten.normal = en.skatt.normal + en.resultat_til_eiere.normal.statkraft + en.hushold.mva.normal,
-      en.staten.ekstra = en.skatt.ekstra + en.resultat_til_eiere.ekstra.statkraft + en.hushold.mva.ekstra,
+      en.elavgift.normal = (cnp * param_elavgift_prop_alminnelig * param_elavgift_sats_alminnelig_normal) +
+                           (cnp * param_elavgift_prop_redusert * param_elavgift_sats_redusert_normal),
 
+      en.elavgift       = (cnp * param_elavgift_prop_alminnelig * param_elavgift_sats_alminnelig) +
+                          (cnp * param_elavgift_prop_redusert * param_elavgift_sats_redusert),
+
+      en.staten.spot    = en.skatt.spot +
+                          en.resultat_til_eiere.spot.statkraft +
+                          en.hushold.mva.spot +
+                          en.elavgift,
+
+      en.staten.normal  = en.skatt.normal +
+                          en.resultat_til_eiere.normal.statkraft +
+                          en.hushold.mva.normal +
+                          en.elavgift.normal,
+
+      en.staten.ekstra  = en.staten.spot - en.staten.normal,
       en.staten.ekstra_etter_stotte = en.staten.ekstra - en.hushold.stromstotte.mmva,
     ) %>%
     inner_join(regions, by = "region") %>%
@@ -181,8 +216,7 @@ rsm.calculate <- function(
         price,
         price_monthly_mean,
         stromstotte_per_kwh,
-        ssb.prop.vannkraft,
-        ssb.prop.vannkraft.ma4
+        ssb_prop_vannkraft,
       ), ~ sum(.x, na.rm = T)),
       .groups = "drop"
     ) %>%

@@ -5,7 +5,6 @@ library(purrr)
 library(dplyr)
 library(readr)
 
-
 source(here::here("R/main.R"))
 
 params <- expand_grid(
@@ -23,8 +22,6 @@ params <- expand_grid(
   param_prop_private = .04,
   na.rm = T
 )
-
-params
 
 result <- pmap_dfr(
   params,
@@ -87,9 +84,17 @@ latest <- national %>%
 minimal <- bind_rows(weekly, latest)
 
 dir.create(here::here("outputs"), showWarnings = F)
+
+national %>%
+  filter(param_price_baseline == .4, param_prop_spot_eksponert == .7) %>%
+  filter(date == max(date)) %>%
+  tail(1) %>%
+  t()
+
 max_date <- format(max(result$date), "%Y-%m-%d-%H%M%S")
 max_date
 
 write_csv(national, here::here(glue("outputs/merinntekter-no-{max_date}")))
+write_csv(result, here::here(glue("outputs/merinntekter-latest.csv")))
 write_csv(minimal, here::here(glue("outputs/merinntekter-minimal-latest.csv")))
 write_file(minimal %>% jsonlite::toJSON(), here::here(glue("outputs/merinntekter-minimal-latest.json")))

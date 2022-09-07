@@ -11,9 +11,11 @@ Spørsmål? Ta kontakt med jari@vg.no.
 Sett miljøvariabler
 
     API_PRICES_DAILY="https://..."
+    API_PRICES_HOURLY="https://..."
     API_PROD_DAILY="https://..."
     API_PROD_HOURLY="https://..."
-    API_PRICES_HOURLY="https://..."
+    API_CNP_DAILY="https://..."
+    API_CNP_HOURLY="https://..."
 
 og så:
 
