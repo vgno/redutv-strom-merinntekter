@@ -95,7 +95,7 @@ national %>%
 max_date <- format(max(national$date), "%Y-%m-%d-%H%M%S")
 max_date
 
-write_csv(national, here::here(glue("outputs/merinntekter-no-{max_date}")))
+write_csv(national, here::here(glue("outputs/merinntekter-no-{max_date}.csv")))
 write_csv(national, here::here(glue("outputs/merinntekter-no-latest.csv")))
 write_csv(minimal, here::here(glue("outputs/merinntekter-minimal-latest.csv")))
 write_file(minimal %>% jsonlite::toJSON(), here::here(glue("outputs/merinntekter-minimal-latest.json")))
