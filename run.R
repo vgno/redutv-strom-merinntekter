@@ -53,6 +53,7 @@ minimize <- function(dat) {
 }
 
 national <- result %>% filter(region == "no")
+rm(result)
 
 weekly <- national %>%
   mutate(week_start = lubridate::floor_date(as.Date(date), "week", week_start = 1)) %>%
@@ -91,10 +92,10 @@ national %>%
   tail(1) %>%
   t()
 
-max_date <- format(max(result$date), "%Y-%m-%d-%H%M%S")
+max_date <- format(max(national$date), "%Y-%m-%d-%H%M%S")
 max_date
 
 write_csv(national, here::here(glue("outputs/merinntekter-no-{max_date}")))
-write_csv(result, here::here(glue("outputs/merinntekter-latest.csv")))
+write_csv(national, here::here(glue("outputs/merinntekter-no-latest.csv")))
 write_csv(minimal, here::here(glue("outputs/merinntekter-minimal-latest.csv")))
 write_file(minimal %>% jsonlite::toJSON(), here::here(glue("outputs/merinntekter-minimal-latest.json")))
